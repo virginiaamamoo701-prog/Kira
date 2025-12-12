@@ -1,0 +1,77 @@
+import requests
+import time
+import random
+
+def check_website_status(url):
+    """
+    Проверяет статус доступности веб-сайта.
+    Возвращает статус-код и время ответа.
+    """
+    try:
+        # Установка таймаута для предотвращения зависания
+        start_time = time.time()
+        # Выполняем GET-запрос
+        response = requests.get(url, timeout=5)
+        end_time = time.time()
+        
+        # Время ответа в миллисекундах
+        latency_ms = (end_time - start_time) * 1000
+        
+        # Проверяем успешность (статус-код 200-299)
+        if 200 <= response.status_code < 300:
+            status = "ДОСТУПЕН (OK)"
+        else:
+            status = f"НЕДОСТУПЕН (HTTP {response.status_code})"
+            
+        return status, latency_ms
+        
+    except requests.exceptions.Timeout:
+        return "ОШИБКА: Таймаут (5 сек)", 0.0
+    except requests.exceptions.RequestException as e:
+        return f"ОШИБКА: Нет ответа ({type(e).__name__})", 0.0
+
+def generate_sample_file(filename="websites_to_check.txt"):
+    """Создает пример файла со списком URL для проверки."""
+    sample_urls = [
+        "https://www.google.com",
+        "https://www.github.com",
+        "https://api.example.com/status", # Вымышленный адрес
+        "http://local-service:8080/health", # Вымышленный локальный сервис
+        "https://www.bad-url-for-test-345098.com" # Несуществующий домен для теста
+    ]
+    with open(filename, 'w') as f:
+        for url in sample_urls:
+            f.write(f"{url}\n")
+    print(f"✅ Создан файл со списком URL: '{filename}'")
+
+def run_health_check(filename="websites_to_check.txt"):
+    """Читает URL из файла, проверяет и выводит отчет."""
+    try:
+        with open(filename, 'r') as f:
+            urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    except FileNotFoundError:
+        print(f"❌ ОШИБКА: Файл '{filename}' не найден. Сначала запустите генерацию файла.")
+        return
+
+    print("\n--- 🌐 ОТЧЕТ О ДОСТУПНОСТИ ВЕБ-СЕРВИСОВ ---")
+    print(f"Проверяется {len(urls)} сервисов...")
+    print("-" * 80)
+    print(f"| {'URL':<50} | {'СТАТУС':<25} | {'ВРЕМЯ ОТВЕТА (мс)':<15} |")
+    print("-" * 80)
+    
+    for url in urls:
+        status, latency = check_website_status(url)
+        # Вывод в форматированном виде
+        latency_str = f"{latency:.2f}" if latency > 0.0 else "N/A"
+        print(f"| {url:<50} | {status:<25} | {latency_str:<15} |")
+        
+    print("-" * 80)
+    print("Проверка завершена.")
+
+# --- Главный запуск программы ---
+
+# 1. Создаем файл со списком для проверки
+generate_sample_file()
+
+# 2. Запускаем проверку
+run_health_check()
