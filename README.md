@@ -1,27 +1,29 @@
 import requests
 import time
+import argparse
+import logging
 from concurrent.futures import ThreadPoolExecutor
-import random
 
-# Установим максимальное количество потоков для одновременных проверок
-MAX_WORKERS = 10 
+# --- Конфигурация Логирования ---
+LOG_FILENAME = 'health_check_report.log'
+logging.basicConfig(
+    filename=LOG_FILENAME,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+# --- Конец Конфигурации ---
 
-def check_website_status(url):
-    """
-    Проверяет статус доступности веб-сайта и возвращает структурированный результат.
-    """
-    timeout = 5 # Таймаут в секундах
+def check_website_status(url, timeout):
+    """Проверяет статус доступности веб-сайта."""
     result = {'url': url, 'status': 'ОШИБКА: Неизвестно', 'latency': 0.0}
     
     try:
         start_time = time.time()
-        # Выполняем GET-запрос с таймаутом
         response = requests.get(url, timeout=timeout)
         end_time = time.time()
         
         result['latency'] = (end_time - start_time) * 1000  # мс
         
-        # Проверяем успешность (статус-код 200-299)
         if 200 <= response.status_code < 300:
             result['status'] = "ДОСТУПЕН (OK)"
         else:
@@ -36,41 +38,50 @@ def check_website_status(url):
         
     return result
 
-def generate_sample_file(filename="websites_to_check_async.txt"):
-    """Создает пример файла со списком URL для проверки."""
-    sample_urls = [
-        "https://www.google.com",
-        "https://www.github.com",
-        "https://www.stackoverflow.com",
-        "https://www.python.org",
-        "http://nosuchsite-345098.com", # Для проверки ошибки
-        "https://www.wikipedia.org",
-        "https://www.bing.com",
-        "https://developer.mozilla.org",
-    ]
-    # Добавим несколько дубликатов для имитации нагрузки
-    sample_urls.extend(random.sample(sample_urls, 3)) 
-    
-    with open(filename, 'w') as f:
-        for url in sample_urls:
-            f.write(f"{url}\n")
-    print(f"✅ Создан файл со списком URL: '{filename}'")
-    return filename
-
-def run_concurrent_health_check(filename):
-    """
-    Читает URL, запускает проверку параллельно и выводит отчет.
-    """
+def run_concurrent_health_check(filename, max_workers, timeout):
+    """Читает URL, запускает проверку параллельно и выводит/логирует отчет."""
     try:
         with open(filename, 'r') as f:
             urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
-        print(f"❌ ОШИБКА: Файл '{filename}' не найден.")
+        error_msg = f"ОШИБКА: Файл списка URL '{filename}' не найден."
+        print(f"❌ {error_msg}")
+        logging.error(error_msg)
         return
 
     start_time_total = time.time()
     
-    # Использование ThreadPoolExecutor для параллельного выполнения
-    # 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # map
+    print(f"\n--- 📈 УСОВЕРШЕНСТВОВАННЫЙ Health Check ---")
+    print(f"Файл: {filename} | Потоков: {max_workers} | Таймаут: {timeout} с")
+    print("-" * 85)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(lambda url: check_website_status(url, timeout), urls))
+        
+    end_time_total = time.time()
+
+    # --- Формирование отчета ---
+    
+    # Заголовок для консоли
+    report_header = f"| {'URL':<45} | {'СТАТУС':<20} | {'ВРЕМЯ ОТВЕТА (мс)':<15} |"
+    print(report_header)
+    print("-" * 85)
+    logging.info(f"Начало проверки. Проверено {len(urls)} сервисов за {end_time_total - start_time_total:.2f} сек.")
+    
+    for result in results:
+        latency_str = f"{result['latency']:.2f}" if result['latency'] > 0.0 else "N/A"
+        
+        # Вывод в консоль
+        print(f"| {result['url']:<45} | {result['status']:<20} | {latency_str:<15} |")
+        
+        # Запись в лог-файл
+        log_message = f"URL: {result['url']}, Status: {result['status']}, Latency: {latency_str}"
+        if "ОШИБКА" in result['status'] or "НЕДОСТУПЕН" in result['status']:
+            logging.warning(log_message)
+        else:
+            logging.info(log_message)
+        
+    print("-" * 85)
+    print(f"Проверка завершена. Детальный отчет сохранен в '{LOG_FILENAME}'")
+    
+# --- Настройка аргументов командной строки (
